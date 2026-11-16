@@ -1,0 +1,16 @@
+Make an assembly instruction to build a small house model from prefabricated elements.
+
+Make a good design and readable flow.
+Use lines and arows to explain the operations step by step.
+Pictures included in the folder "Assembly"
+Export this to PDF in A4 format
+
+How the house is built:
+
+1. Long walls slided into corner profiles and glued.
+2. Short walls slided into corner profiles but not glued
+3. The roof is assembled and glued, 
+4. The let stripe is mounted beneath the roof top beam
+5. The roof is slided onto the top edge of the long walls.
+
+ 

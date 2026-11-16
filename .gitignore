@@ -1,0 +1,11 @@
+# Python
+_work/venv/
+__pycache__/
+# generated previews / test renders
+_work/sd/
+_work/p_*/
+City_Layout_3D/renders*/
+# superseded first version of the 3D model
+City_Layout_3D/city_layout_lights.html
+# Firebase local cache
+hosting/.firebase/

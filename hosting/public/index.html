@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<title>Julelandsby – layout & lighting connection (3D)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Julelandsby">
+<meta name="theme-color" content="#1d232b">
+<script>
+// Device detection -> classes on <html>: is-mobile (phone / narrow screen), is-ios, landscape.
+// Override with ?device=mobile or ?device=desktop
+(function () {
+  const forced = new URLSearchParams(location.search).get('device');
+  const ua = navigator.userAgent;
+  const ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const phoneUA = /iPhone|iPod|Android.+Mobile|Windows Phone/.test(ua);
+  function apply() {
+    const coarse = matchMedia('(pointer: coarse)').matches;
+    const small = Math.min(innerWidth, innerHeight) < 600;
+    const mobile = forced ? forced === 'mobile' : (phoneUA || (coarse && small) || innerWidth < 760);
+    const c = document.documentElement.classList;
+    c.toggle('is-mobile', mobile); c.toggle('is-ios', ios); c.toggle('landscape', innerWidth > innerHeight);
+  }
+  apply(); addEventListener('resize', apply); addEventListener('orientationchange', apply);
+  window.__isMobile = () => document.documentElement.classList.contains('is-mobile');
+})();
+</script>
+<style>
+  :root { --bg:#1d232b; --panel:#252d37; --txt:#e8edf2; --muted:#9aa7b4; --acc:#f0b429; --led:#8a3ffc; --sl:#2fbf4a; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--txt); font:14px/1.45 "Segoe UI",Arial,sans-serif; overflow:hidden; }
+  #app { display:flex; height:100%; }
+  #side { width:380px; min-width:380px; background:var(--panel); padding:16px 18px; overflow-y:auto; border-right:1px solid #333d49; }
+  #view { position:relative; flex:1; }
+  #view canvas { display:block; }
+  h1 { font-size:18px; margin:0 0 2px; }
+  h2 { font-size:15px; margin:18px 0 6px; color:var(--acc); }
+  .sub { color:var(--muted); font-size:12px; margin-bottom:12px; }
+  .steps { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+  .steps button { padding:8px 0; font-weight:700; }
+  button, select { background:#323d4a; color:var(--txt); border:1px solid #445264; border-radius:5px; cursor:pointer; padding:6px 10px; font:inherit; }
+  button:hover { background:#3d4a5a; }
+  button.on { background:var(--acc); color:#1d232b; border-color:var(--acc); }
+  #stepTitle { font-size:16px; font-weight:700; margin:12px 0 4px; }
+  #stepText { margin:0; padding-left:18px; }
+  #stepText li { margin-bottom:4px; }
+  .row { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0; align-items:center; }
+  label.chk { display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none; }
+  table { border-collapse:collapse; width:100%; font-size:12px; }
+  td,th { border-bottom:1px solid #3a4553; padding:3px 4px; text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .note { font-size:12px; color:var(--muted); }
+  .sw { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:middle; }
+  #nav { position:absolute; bottom:14px; left:50%; transform:translateX(-50%); display:flex; gap:8px; }
+  #nav button { padding:8px 16px; background:rgba(40,48,58,.9); }
+  #hint { position:absolute; top:10px; right:12px; font-size:12px; color:#c4ccd5; background:rgba(0,0,0,.35); padding:4px 8px; border-radius:4px; }
+  #compass { position:absolute; top:10px; left:12px; font-size:12px; color:#1d232b; background:rgba(255,255,255,.8); padding:4px 8px; border-radius:4px; }
+  .lbl { background:rgba(255,255,255,.93); color:#1d232b; font:600 11px "Segoe UI",Arial; padding:2px 6px; border-radius:3px; border-left:3px solid var(--acc); white-space:nowrap; pointer-events:none; box-shadow:0 1px 3px rgba(0,0,0,.35); }
+  .lbl.dim { background:none; border:none; box-shadow:none; color:#fff; font-size:13px; text-shadow:0 0 3px #000,0 0 3px #000; }
+  .lbl.led { border-left-color:var(--led); }
+  .lbl.sl { border-left-color:var(--sl); }
+  .lbl.big { font-size:13px; }
+  #mbar { display:none; }
+
+  /* ---------------- phone layout: full-screen 3D + bottom sheet ---------------- */
+  html.is-mobile, html.is-mobile body { position:fixed; inset:0; overscroll-behavior:none; -webkit-text-size-adjust:100%; }
+  html.is-mobile body { font-size:15px; -webkit-tap-highlight-color:transparent; }
+  html.is-mobile #app { display:block; height:100%; }
+  html.is-mobile #view { position:fixed; left:0; right:0; top:0; bottom:calc(64px + env(safe-area-inset-bottom)); }
+  html.is-mobile #side { position:fixed; left:0; right:0; bottom:0; width:auto; min-width:0; z-index:10;
+    height:calc(64px + env(safe-area-inset-bottom)); max-height:none; padding:0 14px calc(14px + env(safe-area-inset-bottom));
+    border-right:none; border-top:1px solid #3a4553; border-radius:14px 14px 0 0; box-shadow:0 -4px 18px rgba(0,0,0,.45);
+    overflow:hidden; transition:height .25s ease; -webkit-overflow-scrolling:touch; }
+  html.is-mobile #side.open { height:78%; overflow-y:auto; }
+  html.is-mobile.landscape #side.open { height:88%; }
+  html.is-mobile #mbar { display:flex; align-items:center; gap:10px; position:sticky; top:0; z-index:2; background:var(--panel);
+    height:64px; margin:0 -14px 8px; padding:6px 10px 0; }
+  html.is-mobile #mbar::before { content:''; position:absolute; top:5px; left:50%; width:38px; height:4px; margin-left:-19px; border-radius:2px; background:#55606d; }
+  html.is-mobile #mbar button { min-width:48px; height:44px; font-size:18px; padding:0; }
+  html.is-mobile #mTitle { flex:1; text-align:center; font-weight:700; font-size:15px; line-height:1.2; cursor:pointer; user-select:none; }
+  html.is-mobile #mTitle small { display:block; font-weight:400; font-size:11px; color:var(--muted); }
+  html.is-mobile #nav, html.is-mobile #stepTitle { display:none; }
+  html.is-mobile h1 { font-size:17px; }
+  html.is-mobile .steps button { padding:11px 0; font-size:16px; }
+  html.is-mobile button, html.is-mobile select { min-height:40px; font-size:15px; }
+  html.is-mobile label.chk { min-height:36px; padding-right:8px; }
+  html.is-mobile label.chk input { width:20px; height:20px; }
+  html.is-mobile #hint { top:auto; bottom:8px; right:8px; font-size:11px; }
+  html.is-mobile #compass { top:calc(8px + env(safe-area-inset-top)); left:8px; font-size:11px; padding:3px 6px; }
+  html.is-mobile .lbl { font-size:9.5px; padding:1px 4px; }
+  html.is-mobile .lbl.big { font-size:10.5px; }
+  html.is-mobile .lbl.dim { font-size:11px; }
+  html.is-mobile td, html.is-mobile th { font-size:12.5px; padding:5px 4px; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="app">
+  <div id="side">
+    <div id="mbar"><button id="mPrev" aria-label="Previous step">◀</button>
+      <div id="mTitle" role="button"><span id="mStep">Step</span><small id="mHint">tap for details</small></div>
+      <button id="mNext" aria-label="Next step">▶</button></div>
+    <h1 id="title">Julelandsby 1 – layout & lighting</h1>
+    <div class="sub" id="subtitle"></div>
+    <div class="row"><span>Landsby:</span> <select id="selVillage"></select></div>
+
+    <div class="steps" id="steps"></div>
+    <div id="stepTitle"></div>
+    <ol id="stepText"></ol>
+
+    <h2>View</h2>
+    <div class="row">
+      <label class="chk"><input type="checkbox" id="cbExplode"> Lift roofs</label>
+      <label class="chk"><input type="checkbox" id="cbXray"> X-ray (see cables)</label>
+    </div>
+    <div class="row">
+      <label class="chk"><input type="checkbox" id="cbVatt"> Snow (vatt)</label>
+      <label class="chk"><input type="checkbox" id="cbGarland"> Garland</label>
+      <label class="chk"><input type="checkbox" id="cbDecor"> Trees</label>
+    </div>
+    <div class="row">
+      <label class="chk"><input type="checkbox" id="cbLights"> Lights on (night)</label>
+      <label class="chk"><input type="checkbox" id="cbLabels" checked> Labels</label>
+    </div>
+    <div class="row">
+      <button data-cam="persp">3D</button>
+      <button data-cam="sal">From audience</button>
+      <button data-cam="top">Top</button>
+      <button data-cam="back">From stage</button>
+      <button data-cam="under">Underside</button>
+      <button data-cam="end">Driver end</button>
+    </div>
+    <div class="row">
+      <button id="btnAll">Show everything</button>
+      <button id="btnGlb">Export .GLB</button>
+      <button id="btnPng">Save image</button>
+    </div>
+
+    <h2>DMX channels (8-ch LED driver)</h2>
+    <table id="chTable"></table>
+    <svg id="schem" viewBox="0 0 344 250" width="100%" style="margin-top:8px"></svg>
+
+    <h2>Cable lengths (measured in model)</h2>
+    <table id="lenTable"></table>
+    <p class="note">Measured along the routed path from the driver, plus 15 % slack. Round up when you cut.</p>
+
+    <h2>Sources</h2>
+    <p class="note" id="sources"></p>
+  </div>
+  <div id="view">
+    <div id="compass">▼ front = SAL (audience) · back = SCENE (stage)</div>
+    <div id="hint">Left-drag: rotate · Right-drag: pan · Wheel: zoom</div>
+    <div id="nav"><button id="prev">◀ Previous</button><button id="next">Next ▶</button></div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ===========================================================================
+// DATA  (units: cm)
+// Coordinates per village: X = 0..240 along the board, 0 = LEFT end as seen from
+// the audience ("siden mot salen"). Z = depth, -D/2 = back edge (stage / SCENE side),
+// +D/2 = front edge (audience / SAL side). Y = up, 0 = floor.
+// ===========================================================================
+
+// House types – from House_1..6.jpeg. W = gable (Front/Bak) width, L = side (Side1/Side2) length,
+// Hw = eave height, Ht = total height, roof = roof outer size (W x L).
+// Windows: face -> list; a = horizontal pos. seen from outside (+ = right), y = centre height.
+const HOUSE_TYPES = {
+  1: { W:20, L:20, Hw:13.5, Ht:25, roof:[23,23], trim:0x7a2323, chimney:'side2',
+       faces:{ front:[{door:true, a:0, w:5, h:8.5, color:0x8e1b1b}],
+               side1:[{a:0, y:7.5, w:4.5, h:4.5}], bak:[{a:0, y:7, w:4.5, h:4.5}], side2:[{a:0, y:7, w:4.5, h:4.5}] } },
+  2: { W:20, L:30, Hw:20, Ht:33, roof:[24,34], trim:0x4a2c12, chimney:'side2',
+       faces:{ front:[{a:-4.5, y:15.5, w:4.5, h:4}, {a:4.5, y:15.5, w:4.5, h:4}, {door:true, a:0, w:5, h:11, color:0x5a2e1e}],
+               side1:[{a:-9, y:10.5, w:4.5, h:9}, {a:0, y:10.5, w:4.5, h:9}, {a:9, y:10.5, w:4.5, h:9}],
+               bak:[{a:0, y:12, w:4.5, h:4}], side2:[{a:0, y:10, w:4.5, h:9}] } },
+  3: { W:30, L:30, Hw:19, Ht:37, roof:[34,34], trim:0xa86a3c, chimney:'side2',
+       faces:{ front:[{door:true, a:-6, w:5, h:9, color:0x8e1b1b}, {round:true, a:6, y:17, r:3}],
+               side1:[{round:true, a:-6, y:10, r:3}, {round:true, a:6, y:10, r:3}],
+               bak:[{round:true, a:0, y:17, r:3}],
+               side2:[{round:true, a:-6, y:10, r:3}, {round:true, a:6, y:10, r:3}] } },
+  4: { W:25, L:25, Hw:24, Ht:40, roof:[29,29], trim:0x1f4d2b, chimney:'side2',
+       faces:{ front:[{round:true, a:0, y:27, r:3}, {door:true, a:0, w:6, h:12, color:0x1f5e33}],
+               side1:[{round:true, a:0, y:14, r:3}], bak:[{round:true, a:0, y:17, r:3}], side2:[{round:true, a:0, y:14, r:3}] } },
+  5: { W:20, L:40, Hw:32, Ht:45, roof:[24,44], trim:0x4a2c12, chimney:'side2',
+       faces:{ front:[{a:0, y:20, w:4.5, h:3.5}, {a:0, y:8, w:4.5, h:3.5}],
+               side1:[{a:-12, y:21, w:4, h:3.5}, {a:0, y:21, w:4, h:3.5}, {a:12, y:21, w:4, h:3.5},
+                      {a:-12, y:8.5, w:4, h:3.5}, {a:12, y:8.5, w:4, h:3.5}, {door:true, a:0, w:6, h:11, color:0x7fa86a}],
+               bak:[{a:0, y:21, w:4.5, h:3.5}],
+               side2:[{a:-12, y:21, w:4, h:3.5}, {a:12, y:21, w:4, h:3.5}, {a:-12, y:8.5, w:4, h:3.5}] } },
+  6: { W:30, L:30, Hw:32, Ht:50, roof:[34,34], trim:0x7a2323, chimney:'side2',
+       faces:{ front:[{a:-6, y:14, w:4, h:15}, {a:6, y:14, w:4, h:15}],
+               side1:[{a:-6, y:24, w:4, h:3.5}, {a:6, y:24, w:4, h:3.5}, {door:true, a:0, w:4.5, h:9, color:0x8e1b1b}],
+               bak:[{a:0, y:14, w:4, h:15}], side2:[{a:-6, y:24, w:4, h:3.5}, {a:6, y:24, w:4, h:3.5}] } },
+};
+
+// Villages – from ADV26_Scenedesign (top view "OVENIFRA" + "SIDEN MOT SALEN") and Ladsby_connection.
+// houses: type, x/z = centre (from the PDF top-view rectangles), faceSal = which face looks at the audience.
+const VILLAGES = {
+  1: { name:'Julelandsby 1', hLeft:20, hRight:5,
+    houses:[ {type:6,x:17.0,z:-13.9,faceSal:'front'}, {type:5,x:61.9,z:-18.2,faceSal:'side1'}, {type:6,x:100.8,z:-9.0,faceSal:'side1'},
+             {type:2,x:140.4,z:-13.5,faceSal:'side1'}, {type:3,x:189.1,z:-12.6,faceSal:'front'}, {type:4,x:221.4,z:-11.1,faceSal:'side1'} ],
+    trees:[ [13.4,27.5,7.5],[39,-2.7,7.5],[100.5,26.5,7.5],[235.7,15.6,7.5],[30,26,5],[63,19,5],[33,4.9,5],
+            [3,27.6,5],[22.6,23,5],[207,5.7,10],[163,10,10] ] },
+  2: { name:'Julelandsby 2', hLeft:10, hRight:2,
+    houses:[ {type:5,x:13.8,z:-4.1,faceSal:'front'}, {type:3,x:57.2,z:-8.6,faceSal:'front'}, {type:1,x:90.2,z:-6.9,faceSal:'bak'},
+             {type:2,x:138.2,z:-9.5,faceSal:'side1'}, {type:4,x:182.8,z:-10.3,faceSal:'front'}, {type:1,x:218.2,z:-11.5,faceSal:'front'} ],
+    trees:[ [235.4,1.4,7.5],[34.2,22.5,7.5],[128.9,19.9,7.5],[80.3,15.3,7.5],[3.1,25.4,7.5],[206.4,3.2,5],[237,-26.2,5],[159.6,19.8,5],
+            [164.1,8.3,5],[70.7,12.3,10],[152.6,13.6,10],[40.2,12.8,10],[115.1,13.6,10],[196.5,16.6,10] ] },
+  3: { name:'Julelandsby 3', hLeft:2, hRight:10,
+    houses:[ {type:1,x:19.6,z:-13.0,faceSal:'side1'}, {type:2,x:67.5,z:-12.6,faceSal:'side1'}, {type:4,x:111.4,z:-9.1,faceSal:'front'},
+             {type:1,x:145.7,z:-9.3,faceSal:'front'}, {type:5,x:182.1,z:-14.9,faceSal:'side1'}, {type:3,x:221.4,z:-0.5,faceSal:'front'} ],
+    trees:[ [4.6,0.8,7.5],[205.8,21.9,7.5],[111.1,19.3,7.5],[159.7,14.7,7.5],[236.9,24.8,7.5],[33.6,2.6,5],[3,-26.7,5],[80.4,19.2,5],
+            [75.9,7.7,5],[169.3,11.7,10],[87.4,13,10],[199.8,12.2,10],[124.9,13,10],[43.5,16,10] ] },
+  4: { name:'Julelandsby 4', hLeft:5, hRight:20,
+    houses:[ {type:4,x:22.1,z:-7.0,faceSal:'side1'}, {type:2,x:54.1,z:-9.7,faceSal:'front'}, {type:6,x:98.0,z:-9.0,faceSal:'front'},
+             {type:3,x:133.2,z:-7.4,faceSal:'front'}, {type:5,x:181.4,z:-12.5,faceSal:'side1'}, {type:6,x:220.1,z:-12.8,faceSal:'side1'} ],
+    trees:[ [17.2,13.7,7.5],[38.8,19.2,7.5],[118.1,17.5,7.5],[218.5,22.6,7.5],[29.4,18.6,5],[64.2,26.5,5],[44.6,26.5,5],[5.5,24.2,5],
+            [11,21.7,5],[195.2,7.8,10],[154.5,13,10] ] },
+};
+// Common to all villages (method from Ladsby_connection; all boards 600 mm wide)
+for (const id in VILLAGES) Object.assign(VILLAGES[id], {
+  D:60,
+  lamps:[30, 90, 150, 210].map(x => ({ x, z:17 })),   // 4 street lights, evenly distributed, 13 cm from the front edge
+  trunkZ:-10,                                          // street-light trunk 20 cm from the back edge
+  driver:{ x:-28, z:48 }, dmx:{ x:-28, z:78 },
+});
+// planks under the plate near 30 / 120 / 210 cm, shifted so they don't sit where a house cable crosses
+function plankPositions(v) {
+  return [32, 122, 209].map(p0 => {
+    for (let d = 0; d < 40; d += 1) for (const p of [p0 + d, p0 - d])
+      if (v.houses.every(h => Math.abs(p - h.x) > 7)) return p;
+    return p0;
+  });
+}
+
+const FLOOR = 0, PLANK_H = 3.0, OSB_T = 1.8, BASE = PLANK_H + OSB_T; // plate elevated 30 mm
+const BOARD_L = 240, VATT = 0.8;
+const COL = { led:0x8a3ffc, sl:0x2fbf4a };
+
+// ===========================================================================
+// Renderer / scene
+// ===========================================================================
+const view = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ antialias:true, preserveDrawingBuffer:true });
+const MOBILE_START = window.__isMobile();
+renderer.setPixelRatio(Math.min(devicePixelRatio, MOBILE_START ? 2 : 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+view.appendChild(renderer.domElement);
+const labelRenderer = new CSS2DRenderer();
+Object.assign(labelRenderer.domElement.style, { position:'absolute', top:'0', pointerEvents:'none' });
+view.appendChild(labelRenderer.domElement);
+
+const scene = new THREE.Scene();
+const DAY_BG = new THREE.Color(0xdfe6ec), NIGHT_BG = new THREE.Color(0x0d1117);
+scene.background = DAY_BG.clone();
+const camera = new THREE.PerspectiveCamera(32, 1, 1, 6000);
+const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true;
+const hemi = new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.6); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.set(-90, 260, 160); sun.castShadow = true; sun.shadow.mapSize.set(MOBILE_START ? 2048 : 4096, MOBILE_START ? 2048 : 4096);
+Object.assign(sun.shadow.camera, { left:-170, right:170, top:120, bottom:-120, near:10, far:800 }); sun.shadow.bias = -0.0005;
+scene.add(sun);
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0, 0.4, 0.75); composer.addPass(bloom);
+const useComposer = !MOBILE_START;                       // phones: render directly (no bloom) – faster, less battery
+function renderFrame() { if (useComposer) composer.render(); else renderer.render(scene, camera); }
+composer.addPass(new OutputPass());
+
+// ===========================================================================
+// Materials
+// ===========================================================================
+function osbTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d');
+  g.fillStyle = '#c9a36a'; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 900; i++) {
+    const x = Math.random()*512, y = Math.random()*512, l = 10+Math.random()*40, a = Math.random()*Math.PI;
+    g.strokeStyle = `hsl(${30+Math.random()*12},${40+Math.random()*25}%,${42+Math.random()*25}%)`; g.lineWidth = 3+Math.random()*6;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x+Math.cos(a)*l, y+Math.sin(a)*l); g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(4, 1); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const M = {
+  osb:    new THREE.MeshStandardMaterial({ map:osbTexture(), roughness:0.9 }),
+  plank:  new THREE.MeshStandardMaterial({ color:0xd8bf8f, roughness:0.85 }),
+  foam:   new THREE.MeshStandardMaterial({ color:0xffffff, vertexColors:true, roughness:0.95, side:THREE.DoubleSide }),
+  vatt:   new THREE.MeshStandardMaterial({ color:0xfbfdff, roughness:1, side:THREE.DoubleSide }),
+  wall:   new THREE.MeshStandardMaterial({ color:0xf0ebe2, roughness:0.8, side:THREE.DoubleSide }),
+  roof:   new THREE.MeshStandardMaterial({ color:0xffffff, roughness:0.9, side:THREE.DoubleSide }),
+  corner: new THREE.MeshStandardMaterial({ color:0xe2d9c6, roughness:0.8 }),
+  ridge:  new THREE.MeshStandardMaterial({ color:0xc8b48a, roughness:0.8 }),
+  pane:   new THREE.MeshStandardMaterial({ color:0x3a4654, emissive:0xffb050, emissiveIntensity:0, roughness:0.4, side:THREE.DoubleSide }),
+  strip:  new THREE.MeshStandardMaterial({ color:0x151515, roughness:0.5 }),
+  white:  new THREE.MeshStandardMaterial({ color:0xf2f2f2, roughness:0.6 }),
+  led:    new THREE.MeshStandardMaterial({ color:0xfff3d0, emissive:0xffc070, emissiveIntensity:0 }),
+  lamp:   new THREE.MeshStandardMaterial({ color:0x15171a, roughness:0.5, metalness:0.3 }),
+  lampGl: new THREE.MeshStandardMaterial({ color:0xfff0c8, emissive:0xffd890, emissiveIntensity:0 }),
+  ledCab: new THREE.MeshStandardMaterial({ color:COL.led, roughness:0.5 }),
+  slCab:  new THREE.MeshStandardMaterial({ color:COL.sl, roughness:0.5 }),
+  junc:   new THREE.MeshStandardMaterial({ color:0xbfe8c6, roughness:0.5 }),
+  dev:    new THREE.MeshStandardMaterial({ color:0x24272c, roughness:0.4 }),
+  devFr:  new THREE.MeshStandardMaterial({ color:0x9aa3ad, roughness:0.4 }),
+  garl:   new THREE.MeshStandardMaterial({ color:0x2a5a35, roughness:0.95 }),
+  tree:   new THREE.MeshStandardMaterial({ color:0x2f6e4a, roughness:0.9 }),
+  trunk:  new THREE.MeshStandardMaterial({ color:0x6b4a2e }),
+  chim:   new THREE.MeshStandardMaterial({ color:0x4a2c12, roughness:0.7 }),
+  dim:    new THREE.LineBasicMaterial({ color:0x1f6feb }),
+};
+const XRAY = { osb:0.2, plank:0.3, foam:0.25, vatt:0.15, wall:0.22, roof:0.2, corner:0.3, pane:0.3, garl:0.25 };
+for (const k in XRAY) M[k].userData.xrayOpacity = XRAY[k];
+
+// ===========================================================================
+// Helpers
+// ===========================================================================
+const labels = [];
+function addLabel(parent, text, pos, steps, cls = '') {
+  const el = document.createElement('div'); el.className = 'lbl ' + cls; el.textContent = text;
+  const o = new CSS2DObject(el); o.position.copy(pos); o.userData.steps = steps; parent.add(o); labels.push(o); return o;
+}
+function box(w, h, d, mat, x=0, y=0, z=0) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; return m;
+}
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+function polyLen(pts) { let s = 0; for (let i = 1; i < pts.length; i++) s += pts[i].distanceTo(pts[i-1]); return s; }
+function cable(pts, mat, r = 0.3) {
+  const cp = new THREE.CurvePath();
+  for (let i = 0; i < pts.length-1; i++) if (pts[i].distanceTo(pts[i+1]) > 1e-3) cp.add(new THREE.LineCurve3(pts[i], pts[i+1]));
+  const seg = Math.max(8, Math.ceil(cp.getLength() / 1.5));
+  const m = new THREE.Mesh(new THREE.TubeGeometry(cp, seg, r, 6, false), mat); m.castShadow = true; return m;
+}
+const smooth = t => t <= 0 ? 0 : t >= 1 ? 1 : t*t*(3-2*t);
+const clamp = THREE.MathUtils.clamp;
+
+// ===========================================================================
+// Village builder
+// ===========================================================================
+const G = {};
+const GROUPS = ['base','foam','vatt','wiringSL','wiringLED','pigtails','houses','lamps','garland','devices','decor','dims'];
+let village, HOUSES = [], LAMPS = [], lengths = [];
+
+function clearScene() {
+  for (const k of GROUPS) if (G[k]) { scene.remove(G[k]); G[k].traverse(o => o.geometry?.dispose()); }
+  for (const l of labels) l.element.remove(); labels.length = 0;
+  for (const k of GROUPS) { G[k] = new THREE.Group(); G[k].name = k; scene.add(G[k]); }
+}
+
+function buildVillage(id) {
+  clearScene();
+  village = VILLAGES[id];
+  const D = village.D, X0 = -BOARD_L/2;              // world x = X + X0
+  const wx = X => X + X0;
+
+  // ---------- terrain ----------
+  const hProfile = X => village.hLeft + (village.hRight - village.hLeft) * smooth(X / BOARD_L);
+  HOUSES = village.houses.map((h, i) => {
+    const t = HOUSE_TYPES[h.type];
+    const rot = { front:0, side1:-Math.PI/2, bak:Math.PI, side2:Math.PI/2 }[h.faceSal];
+    const along = Math.abs(Math.sin(rot)) > 0.5;      // ridge along X?
+    return { ...h, idx:i, t, rot, fx: along ? t.L : t.W, fz: along ? t.W : t.L,
+             padY: BASE + Math.round(hProfile(h.x) * 2) / 2, label:`HUS ${h.type}` };
+  });
+  const foamTop = (X, z) => {
+    let y = BASE + hProfile(X);
+    for (const h of HOUSES) {
+      const dx = Math.max(0, Math.abs(X - h.x) - h.fx/2 - 1), dz = Math.max(0, Math.abs(z - h.z) - h.fz/2 - 1);
+      const d = Math.hypot(dx, dz); if (d < 8) y = THREE.MathUtils.lerp(h.padY, y, smooth(d / 8));
+    }
+    return y;
+  };
+  village.foamTop = foamTop;
+
+  // ---------- base: planks + OSB ----------
+  village.planks = plankPositions(village);
+  for (const px of village.planks) G.base.add(box(7, PLANK_H, D - 10, M.plank, wx(px), PLANK_H/2, 0));
+  G.base.add(box(BOARD_L, OSB_T, D, M.osb, 0, PLANK_H + OSB_T/2, 0));
+  addLabel(G.base, `OSB plate 2400 × ${D*10} × 18 mm`, V(wx(70), BASE, D/2), [1]);
+  addLabel(G.base, '3 planks under the plate – plate elevated 30 mm (cable space)', V(wx(village.planks[1]), PLANK_H/2, D/2 - 5), [1,4]);
+
+  // dims
+  const dimLine = (a, b, text, o, steps=[1,2]) => {
+    G.dims.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints([a, a.clone().add(o), a.clone().add(o), b.clone().add(o), b.clone().add(o), b]), M.dim));
+    addLabel(G.dims, text, a.clone().add(b).multiplyScalar(0.5).add(o), steps, 'dim');
+  };
+  dimLine(V(wx(0), BASE, D/2), V(wx(240), BASE, D/2), '2400 mm', V(0, 0, 14));
+  dimLine(V(wx(240), BASE, D/2), V(wx(240), BASE, -D/2), `${D*10} mm`, V(14, 0, 0));
+  dimLine(V(wx(0), 0, -D/2), V(wx(0), BASE + village.hLeft, -D/2), `${village.hLeft} cm`, V(-10, 0, 0), [2]);
+  dimLine(V(wx(240), 0, -D/2), V(wx(240), BASE + village.hRight, -D/2), `${village.hRight} cm`, V(10, 0, 0), [2]);
+
+  // ---------- foam + vatt surfaces ----------
+  G.foam.add(terrainMesh(foamTop, 0, M.foam, true, D, wx));
+  addLabel(G.foam, `Isofoam: ${village.hLeft} cm at left end → ${village.hRight} cm at right end`, V(wx(120), foamTop(120, 10) + 1, 10), [2]);
+  HOUSES.forEach(h => addLabel(G.foam, `pad ${h.label}`, V(wx(h.x), h.padY + 0.5, h.z + h.fz/2 + 3), [2]));
+  G.vatt.add(terrainMesh(foamTop, VATT, M.vatt, false, D, wx));
+  addLabel(G.vatt, 'Vatt (cotton snow) covers foam + all cables on top', V(wx(40), foamTop(40, 20) + 2, 20), [5]);
+
+  // ---------- houses ----------
+  HOUSES.forEach(h => makeHouse(h, wx));
+
+  // ---------- street lights ----------
+  // street-light cables are buried IN the foam: 30 mm deep (less where the foam is thinner, min. 6 mm foam below)
+  const depthAt = (X, z) => Math.min(3, foamTop(X, z) - BASE - 0.6);
+  const inFoam = (X, z) => V(wx(X), foamTop(X, z) - depthAt(X, z), z);
+  const sampled = (a, b, n = 24) => Array.from({length:n+1}, (_, k) => { const t = k/n; return inFoam(a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t); });
+  LAMPS = village.lamps.map((l, i) => {
+    // junction under the nearest house
+    let best = null, bd = 1e9;
+    for (const h of HOUSES) { const d = Math.max(0, Math.abs(l.x - h.x) - h.fx/2); if (d < bd) { bd = d; best = h; } }
+    const jx = clamp(l.x, best.x - best.fx/2 + 4, best.x + best.fx/2 - 4);
+    return { ...l, i, house:best, jx, jz:village.trunkZ };
+  });
+  const tz = village.trunkZ, xMax = Math.max(...LAMPS.map(l => l.jx));
+  // trunk: from driver -> along floor -> up the left end face -> in foam groove along X
+  const drv = village.driver;
+  const endTop = foamTop(0, tz);
+  const trunkPts = [
+    V(wx(drv.x) + 4, FLOOR + 2, drv.z - 3), V(wx(-6), FLOOR + 0.5, drv.z - 3), V(wx(-6), FLOOR + 0.5, tz),
+    V(wx(-0.6), FLOOR + 0.5, tz), V(wx(-0.6), endTop - depthAt(0, tz), tz),
+    ...sampled([0, tz], [xMax, tz], 60),
+  ];
+  G.wiringSL.add(cable(trunkPts, M.slCab));
+  lengths.length = 0;
+  let slLen = polyLen(trunkPts);
+  for (const l of LAMPS) {
+    const jy = foamTop(l.jx, tz);
+    G.wiringSL.add(box(3, 1.4, 3, M.junc, wx(l.jx), jy + 0.7, tz));
+    // riser from the buried trunk up into the junction box (under the house), branch back down into the foam to the lamp
+    G.wiringSL.add(cable([inFoam(l.jx, tz).add(V(0.6, 0, 0)), V(wx(l.jx) + 0.6, jy + 0.4, tz)], M.slCab, 0.3));
+    const br = [V(wx(l.jx) - 0.6, jy + 0.4, tz), inFoam(l.jx, tz).add(V(-0.6, 0, 0)).setZ(tz + 1.5), ...sampled([l.jx, tz + 1.5], [l.x, l.z], 24).slice(1)];
+    br.push(V(wx(l.x), foamTop(l.x, l.z) + 0.5, l.z));
+    G.wiringSL.add(cable(br, M.slCab, 0.3));
+    slLen += polyLen(br);
+    makeLamp(l, wx, foamTop);
+    addLabel(G.wiringSL, `J${l.i+1} (under ${l.house.label})`, V(wx(l.jx), jy + 2, tz), [3], 'sl');
+  }
+  addLabel(G.wiringSL, 'Street-light trunk in foam groove, 20 cm from back edge', V(wx(60), foamTop(60, tz) + 1, tz - 6), [3], 'sl');
+  addLabel(G.wiringSL, 'Trunk leaves at left end → driver', V(wx(-6), FLOOR + 4, tz), [3,4], 'sl');
+  addLabel(G.wiringSL, 'Branch in foam → street light', V(wx(LAMPS[0].x), foamTop(LAMPS[0].x, 8) + 1, 8), [3], 'sl');
+
+  // ---------- LED house cables ----------
+  buildLedCables(0, 1);
+  lengths.push({ name:'Street lights (trunk + 4 branches)', ch:7, len:slLen, col:COL.sl });
+
+  // ---------- garland + devices ----------
+  const gz = D/2 + 7;
+  village.garlandZ = gz;
+  makeGarland(wx(-12), wx(244), gz);
+  addLabel(G.garland, 'Garland along the front – cable bundle hidden inside', V(wx(150), FLOOR + 10, gz), [7]);
+  G.devices.add(box(14, 5, 7, M.dev, wx(drv.x), FLOOR + 2.5, drv.z));
+  G.devices.add(box(14.2, 0.6, 7.2, M.devFr, wx(drv.x), FLOOR + 5.2, drv.z));
+  addLabel(G.devices, '8-channel LED driver (Deca LED)', V(wx(drv.x), FLOOR + 7, drv.z), [4,7], 'big');
+  const dmx = village.dmx;
+  G.devices.add(box(14, 4, 9, M.dev, wx(dmx.x), FLOOR + 2, dmx.z));
+  for (let k = 0; k < 8; k++) G.devices.add(box(0.8, 1.2, 2.5, M.devFr, wx(dmx.x) - 5 + k*1.4, FLOOR + 4.4, dmx.z + 1));
+  addLabel(G.devices, 'DMX control', V(wx(dmx.x), FLOOR + 6, dmx.z), [4,7], 'big');
+  G.devices.add(cable([V(wx(dmx.x), FLOOR + 1, dmx.z - 4.5), V(wx(dmx.x), FLOOR + 1, drv.z + 3.5)], M.dev, 0.35));
+
+  // ---------- trees ----------
+  for (const [X, z, d] of village.trees.filter(([X, z]) => village.lamps.every(l => Math.hypot(X - l.x, z - l.z) > 6))) {
+    const s = d / 7.5, y = foamTop(X, z) + VATT, t = new THREE.Group();
+    t.add(box(0.8*s, 2*s, 0.8*s, M.trunk, 0, s, 0));
+    for (let k = 0; k < 3; k++) { const c = new THREE.Mesh(new THREE.ConeGeometry((d/2)*(1 - k*0.22), 6*s, 12), M.tree); c.position.y = (4.5 + k*3.5)*s; c.castShadow = true; t.add(c); }
+    t.position.set(wx(X), y, z); G.decor.add(t);
+  }
+
+  fillPanel();
+}
+
+// --- terrain mesh: top grid + skirts (offset > 0 = vatt layer draped over the sides)
+function terrainMesh(fTop, off, mat, colour, D, wx) {
+  const NX = 241, NZ = Math.round(D) + 1, pos = [], idx = [], H = [], cols = [];
+  for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
+    const X = BOARD_L*i/(NX-1), z = -D/2 + D*j/(NZ-1), y = fTop(X, z) + off;
+    H.push(y); pos.push(wx(X), y, z);
+  }
+  for (let j = 0; j < NZ-1; j++) for (let i = 0; i < NX-1; i++) { const a = j*NX+i, b = a+1, c = a+NX, d = c+1; idx.push(a, c, b, b, c, d); }
+  const y0 = off ? BASE - 0.5 : BASE, e = off ? 0.4 : 0;
+  const skirt = pts => { for (let k = 0; k < pts.length-1; k++) { const [x0,z0,h0] = pts[k], [x1,z1,h1] = pts[k+1], b = pos.length/3;
+      pos.push(x0,y0,z0, x1,y0,z1, x1,h1,z1, x0,h0,z0); idx.push(b, b+1, b+2, b, b+2, b+3); } };
+  const L = BOARD_L;
+  skirt(Array.from({length:NX}, (_, i) => [wx(L*i/(NX-1)), D/2 + e, H[(NZ-1)*NX+i]]));
+  skirt(Array.from({length:NX}, (_, i) => [wx(L - L*i/(NX-1)), -D/2 - e, H[NX-1-i]]));
+  skirt(Array.from({length:NZ}, (_, j) => [wx(0) - e, -D/2 + D*j/(NZ-1), H[j*NX]]).reverse());
+  skirt(Array.from({length:NZ}, (_, j) => [wx(L) + e, D/2 - D*j/(NZ-1), H[(NZ-1-j)*NX+NX-1]]).reverse());
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+  if (colour) {
+    const c0 = new THREE.Color(0xc4dcef), c1 = new THREE.Color(0x6f9fc8), c = new THREE.Color();
+    for (let k = 0; k < pos.length; k += 3) { const t = clamp((pos[k+1] - BASE) / 20, 0, 1); c.copy(c0).lerp(c1, t); cols.push(c.r, c.g, c.b); }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  }
+  const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.castShadow = !off; return m;
+}
+
+// --- house: local frame: ridge along local Z, Front gable at +Z, Side1 at +X, Side2 at -X, Bak at -Z
+const T = 0.4;
+function rectHole(cx, cy, w, h) { const p = new THREE.Path(); p.moveTo(cx-w/2, cy-h/2); p.lineTo(cx-w/2, cy+h/2); p.lineTo(cx+w/2, cy+h/2); p.lineTo(cx+w/2, cy-h/2); p.closePath(); return p; }
+function circleHole(cx, cy, r) { const p = new THREE.Path(); p.absarc(cx, cy, r, 0, Math.PI*2, true); return p; }
+const FACE = {   // n = outward normal, r = viewer's right, sx = shape-x sign, d = half extent key
+  front:{ n:V(0,0,1),  r:V(1,0,0),  sx: 1 }, bak:{ n:V(0,0,-1), r:V(-1,0,0), sx:-1 },
+  side1:{ n:V(1,0,0),  r:V(0,0,-1), sx:-1 }, side2:{ n:V(-1,0,0), r:V(0,0,1), sx:-1 },
+};
+function makeHouse(h, wx) {
+  const t = h.t, W = t.W, L = t.L, Hw = t.Hw, rise = t.Ht - t.Hw - 1.2, p = Math.atan(rise / (W/2)), Hr = Hw + rise;
+  const house = new THREE.Group(), body = new THREE.Group(), roof = new THREE.Group(); house.add(body, roof);
+  const trimMat = new THREE.MeshStandardMaterial({ color:t.trim, roughness:0.6 });
+  const ext = { front:L/2, bak:L/2, side1:W/2, side2:W/2 };
+
+  for (const f of ['front','bak','side1','side2']) {
+    const F = FACE[f], gable = f === 'front' || f === 'bak';
+    const wdt = gable ? W - 2*T : L;
+    const sh = new THREE.Shape();
+    sh.moveTo(-wdt/2, 0); sh.lineTo(wdt/2, 0); sh.lineTo(wdt/2, Hw);
+    if (gable) sh.lineTo(0, Hw + (wdt/2)*Math.tan(p));
+    sh.lineTo(-wdt/2, Hw); sh.closePath();
+    const items = t.faces[f] || [];
+    for (const w of items) if (!w.door) sh.holes.push(w.round ? circleHole(w.a*F.sx, w.y, w.r) : rectHole(w.a*F.sx, w.y, w.w, w.h));
+    const m = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth:T, bevelEnabled:false }), M.wall);
+    m.castShadow = m.receiveShadow = true;
+    if (f === 'front') m.position.z = L/2 - T;
+    if (f === 'bak') m.position.z = -L/2;
+    if (f === 'side1') { m.rotation.y = -Math.PI/2; m.position.x = W/2; }
+    if (f === 'side2') { m.rotation.y = Math.PI/2; m.position.x = -W/2; }
+    body.add(m);
+    // panes, frames, doors
+    for (const w of items) {
+      const c = F.r.clone().multiplyScalar(w.a);
+      if (w.door) {
+        const dm = new THREE.MeshStandardMaterial({ color:w.color, roughness:0.6 });
+        const d = box(w.w, w.h, 0.3, dm); d.position.copy(c).addScaledVector(F.n, ext[f] + 0.15); d.position.y = w.h/2;
+        d.lookAt(d.position.clone().add(F.n)); body.add(d); continue;
+      }
+      const pg = w.round ? new THREE.CircleGeometry(w.r, 20) : new THREE.PlaneGeometry(w.w, w.h);
+      const pane = new THREE.Mesh(pg, M.pane); pane.position.copy(c).addScaledVector(F.n, ext[f] - T/2); pane.position.y = w.y;
+      pane.lookAt(pane.position.clone().add(F.n)); body.add(pane);
+      const fr = w.round ? new THREE.Mesh(new THREE.TorusGeometry(w.r + 0.3, 0.35, 8, 24), trimMat)
+                         : new THREE.Mesh(frameGeo(w.w, w.h), trimMat);
+      fr.position.copy(c).addScaledVector(F.n, ext[f] + 0.1); fr.position.y = w.y; fr.lookAt(fr.position.clone().add(F.n)); body.add(fr);
+    }
+  }
+  for (const sx of [1,-1]) for (const sz of [1,-1]) body.add(box(1.0, Hw, 1.0, M.corner, sx*(W/2-0.3), Hw/2, sz*(L/2-0.3)));
+
+  // roof (snow) – slabs on ±X, ridge along Z
+  const ovW = (t.roof[0] - W)/2, ovL = (t.roof[1] - L)/2, th = 1.2, s = (W/2 + ovW)/Math.cos(p), Lr = L + 2*ovL;
+  for (const side of [1, -1]) {
+    const slab = box(s, th, Lr, M.roof);
+    const dir = V(side*Math.cos(p), -Math.sin(p), 0), nrm = V(side*Math.sin(p), Math.cos(p), 0);
+    slab.position.set(0, Hr, 0).addScaledVector(dir, s/2).addScaledVector(nrm, th/2);
+    slab.rotation.z = -side*p; roof.add(slab);
+    for (const ez of [1, -1]) {           // coloured trim on the gable edges
+      const f = box(s, 0.9, 0.35, trimMat); f.position.copy(slab.position).add(V(0, -0.5, ez*(Lr/2 - 0.1))); f.rotation.z = -side*p; roof.add(f);
+    }
+  }
+  // ridge (top) beam + LED strip under it
+  const rb = new THREE.Shape(); rb.moveTo(-0.9, 0); rb.lineTo(0.9, 0); rb.lineTo(0.9, 0.5); rb.lineTo(0, 1.4); rb.lineTo(-0.9, 0.5); rb.closePath();
+  const rl = L - 2*T - 0.2, ridge = new THREE.Mesh(new THREE.ExtrudeGeometry(rb, { depth:rl, bevelEnabled:false }), M.ridge);
+  ridge.position.set(0, Hr - 1.6, -rl/2); roof.add(ridge);
+  const sl = L - 2*T - 1.2; roof.add(box(1.0, 0.12, sl, M.strip, 0, Hr - 1.68, 0));
+  for (let k = 0; k < Math.floor(sl/1.67); k++) roof.add(box(0.5, 0.15, 0.5, M.led, 0, Hr - 1.8, -sl/2 + 0.8 + k*1.67));
+  if (t.chimney) { const cx = (t.chimney === 'side2' ? -1 : 1) * W*0.22; roof.add(box(2.4, 6, 2.4, M.chim, cx, Hw + rise*0.56 + 1.6, -L*0.2)); }
+  const light = new THREE.PointLight(0xffb565, 0, 90, 1.6); light.position.set(0, Hr - 3, 0); roof.add(light);
+
+  house.position.set(wx(h.x), h.padY, h.z); house.rotation.y = h.rot;
+  // strip end used for the pigtail: the end nearest the back (stage side) of the board
+  const zEnd = [sl/2, -sl/2].sort((a, b) => { const wa = V(0,0,a).applyAxisAngle(V(0,1,0), h.rot), wb = V(0,0,b).applyAxisAngle(V(0,1,0), h.rot);
+    return (wa.z - wb.z) || (wa.x - wb.x); })[0];
+  Object.assign(h, { group:house, body, roof, light, Hr, stripY:Hr - 1.9, stripEnd:zEnd });
+  addLabel(roof, 'Roof rests loose on the walls (not fastened)', V(0, t.Ht + 1, 0), h.idx === 1 ? [6] : [], 'big');
+  addLabel(house, h.label, V(0, t.Ht + 4, 0), [5,6,7], 'big');
+  G.houses.add(house);
+}
+function frameGeo(w, h) {
+  const s = new THREE.Shape(); const o = 0.6;
+  s.moveTo(-w/2-o, -h/2-o); s.lineTo(w/2+o, -h/2-o); s.lineTo(w/2+o, h/2+o); s.lineTo(-w/2-o, h/2+o); s.closePath();
+  s.holes.push(rectHole(0, 0, w, h));
+  return new THREE.ShapeGeometry(s);
+}
+
+function makeLamp(l, wx, fTop) {
+  const g = new THREE.Group(), H = 20;
+  g.add(box(1.6, 0.6, 1.6, M.lamp, 0, 0.3, 0));
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.35, H, 10), M.lamp); post.position.y = H/2; g.add(post);
+  const arm = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.25, 8, 16, Math.PI), M.lamp); arm.position.set(1.5, H, 0); g.add(arm);
+  const shade = new THREE.Mesh(new THREE.ConeGeometry(1.2, 1.3, 12), M.lamp); shade.position.set(3, H - 0.6, 0); g.add(shade);
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8), M.lampGl); bulb.position.set(3, H - 1.4, 0); g.add(bulb);
+  const pl = new THREE.PointLight(0xffd890, 0, 40, 1.8); pl.position.set(3, H - 2, 0); g.add(pl); l.light = pl;
+  g.position.set(wx(l.x), fTop(l.x, l.z) + VATT, l.z); g.rotation.y = -Math.PI/2; // arm + lantern point to the front (audience)
+  addLabel(g, `Street light ${l.i+1}`, V(0, H + 3, 0), [3,7], 'sl');
+  G.lamps.add(g);
+}
+
+function makeGarland(x0, x1, z) {
+  const y = FLOOR + 4.5;
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, x1 - x0, 14), M.garl);
+  core.rotation.z = Math.PI/2; core.position.set((x0+x1)/2, y, z); core.castShadow = true; G.garland.add(core);
+  const n = MOBILE_START ? 450 : 900, cone = new THREE.ConeGeometry(0.9, 5, 5), inst = new THREE.InstancedMesh(cone, M.garl, n), m = new THREE.Matrix4(), q = new THREE.Quaternion();
+  let s = 3; const rnd = () => (s = (s*16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < n; i++) {
+    const a = rnd()*Math.PI*2, dir = V(0, Math.cos(a), Math.sin(a));
+    q.setFromUnitVectors(V(0,1,0), dir.clone().add(V((rnd()-0.5)*0.8, 0, 0)).normalize());
+    m.compose(V(x0 + rnd()*(x1-x0), y, z).addScaledVector(dir, 5), q, V(1,1,1)); inst.setMatrixAt(i, m);
+  }
+  G.garland.add(inst);
+}
+
+// --- LED cable per house (method from Ladsby_connection + LED_Roof photos):
+//     driver -> round cables bundled in the garland along the front -> under the plate to the back edge ->
+//     up over the back edge -> on the foam (under vatt) -> in just under the back wall -> 20 cm slack loop on the floor ->
+//     inline plug  <->  short round pigtail from the end of the LED strip under the ridge beam (roof rests loose).
+const ROOF_DY = 18, SLACK = 20, PIG = 10, BUNDLE_R = 0.7;
+function ledPaths(h, i, roofLift, conn) {
+  const D = village.D, wx = X => X - BOARD_L/2, fTop = village.foamTop, drv = village.driver, n = HOUSES.length;
+  const gz = D/2 + 7, ang = i / n * Math.PI * 2;
+  const oy = Math.sin(ang) * BUNDLE_R, oz = Math.cos(ang) * BUNDLE_R;       // round bundle cross-section
+  const toW = (v, dy = 0) => v.clone().applyAxisAngle(V(0,1,0), h.rot).add(V(wx(h.x), h.padY + dy, h.z));
+  const S = toW(V(0, h.stripY, h.stripEnd), roofLift*ROOF_DY);              // strip end (in the roof)
+  const Cr = toW(V(0, h.stripY - PIG, h.stripEnd - Math.sign(h.stripEnd)*2), roofLift*ROOF_DY);   // pigtail socket, 2 cm in from the gable
+  const zb = h.z - h.fz/2;                                                    // back wall (stage side)
+  const ex = clamp(S.x - wx(0), h.x - h.fx/2 + 3, h.x + h.fx/2 - 3);          // entry x (board coords)
+  const E1 = V(wx(ex), h.padY + 0.35, zb + 1.2);
+  const inX = Math.sign(h.x - ex) || 1, inside = X => clamp(X, h.x - h.fx/2 + 2, h.x + h.fx/2 - 2);
+  const r = SLACK / (2*Math.PI), cc = V(wx(inside(ex + inX*(r + 0.4))), h.padY + 0.35, zb + 1.6 + r);
+  const coil = [];
+  for (let k = 0; k <= 24; k++) { const a = Math.PI + k/24 * Math.PI*2; coil.push(V(cc.x + Math.cos(a)*r, cc.y + k*0.012, cc.z + Math.sin(a)*r*0.95)); }
+  const rest = V(wx(inside(ex + inX*(2*r + 3))), h.padY + 0.6, zb + 2 + r);                         // plug lying on the floor before connecting
+  const plug = rest.clone().lerp(Cr.clone().add(V(0, -1.4, 0)), conn);
+  const house = [
+    V(wx(drv.x) + 7, FLOOR + 2.5, drv.z - 1 + oz), V(wx(-8), FLOOR + 4 + oy, gz + oz), V(wx(h.x) + 3, FLOOR + 4 + oy, gz + oz),
+    V(wx(ex), FLOOR + 0.5, D/2 + 1), V(wx(ex), FLOOR + 0.5, -D/2 - 0.7),                     // under the plate (30 mm gap)
+    V(wx(ex), fTop(ex, -D/2 + 0.5) + 0.3, -D/2 - 0.7), V(wx(ex), fTop(ex, -D/2 + 0.5) + 0.3, -D/2 + 0.5),
+    V(wx(ex), fTop(ex, zb - 1.5) + 0.3, zb - 1.5), E1,                                         // just under the wall
+    ...coil,                                                                                   // 20 cm slack
+    plug.clone(),
+  ];
+  return { house, pig:[S, Cr], plug, sock:Cr, E1 };
+}
+function connector(pos, mat, len) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, len, 14), mat); m.position.copy(pos); return m;
+}
+let plugLabel = null, pigLabel = null;
+function buildLedCables(roofLift = 0, conn = 1) {
+  for (const g of [G.wiringLED, G.pigtails]) for (const c of [...g.children]) if (c.isMesh) { c.geometry.dispose(); g.remove(c); }
+  const D = village.D, wx = X => X - BOARD_L/2, fTop = village.foamTop, gz = D/2 + 7;
+  const firstLen = !HOUSES[0].ch;
+  HOUSES.forEach((h, i) => {
+    const P = ledPaths(h, i, roofLift, conn);
+    G.wiringLED.add(cable(P.house, M.ledCab));
+    G.pigtails.add(cable(P.pig, M.ledCab));
+    G.pigtails.add(connector(P.sock.clone().add(V(0, -0.6, 0)), M.dev, 1.4));     // socket on the roof pigtail
+    G.wiringLED.add(connector(P.plug.clone().add(V(0, 0.2, 0)), M.dev, 1.6));      // plug on the house cable
+    if (firstLen) {
+      const F = ledPaths(h, i, 0, 1);
+      lengths.push({ name:`${h.label} (pos. ${i+1}) incl. 20 cm slack`, ch:i+1, len:polyLen(F.house), col:COL.led });
+      h.ch = i + 1;
+    }
+  });
+  // cable ties around the round bundle
+  const xEnd = wx(Math.max(...HOUSES.map(h => h.x)));
+  for (let x = wx(-8); x < xEnd; x += 25) {
+    const t = new THREE.Mesh(new THREE.TorusGeometry(BUNDLE_R + 0.45, 0.12, 6, 16), M.white);
+    t.position.set(x, FLOOR + 4, gz); t.rotation.y = Math.PI/2; G.wiringLED.add(t);
+  }
+  if (firstLen) {
+    const h0 = HOUSES[1], P2 = ledPaths(HOUSES[2], 2, 0, 1);
+    addLabel(G.wiringLED, 'Round LED cables, bundled with ties', V(wx(-8), FLOOR + 6.5, gz), [4], 'led');
+    addLabel(G.wiringLED, 'Cable runs under the plate from front to back', V(wx(h0.x + 2), FLOOR + 1, 0), [4], 'led');
+    addLabel(G.wiringLED, 'Up over the back edge (under vatt)', V(wx(HOUSES[3].x), fTop(HOUSES[3].x, -D/2) + 1, -D/2 - 1), [4,5], 'led');
+    addLabel(G.wiringLED, 'In just under the back wall + 20 cm slack loop', P2.E1.clone().add(V(0, 1.5, 3)), [5], 'led');
+    addLabel(G.wiringLED, 'Plug on house cable', V(0, 0, 0), [5,6], 'led'); plugLabel = labels[labels.length-1];
+    addLabel(G.pigtails, 'Pigtail from LED strip end (roof)', V(0, 0, 0), [5,6], 'led'); pigLabel = labels[labels.length-1];
+  }
+  const P1 = ledPaths(HOUSES[1], 1, roofLift, conn);
+  if (plugLabel) plugLabel.position.copy(P1.plug).add(V(0, conn > 0.99 ? -3 : 1, 0));
+  if (pigLabel) pigLabel.position.copy(P1.sock).add(V(0, 3, 0));
+}
+
+// ===========================================================================
+// Side panel
+// ===========================================================================
+function fillPanel() {
+  const v = village;
+  document.getElementById('title').textContent = `${v.name} – layout & lighting`;
+  document.getElementById('subtitle').textContent = `OSB 240 × ${v.D} cm on 3 planks (30 mm) · isofoam ${v.hLeft} → ${v.hRight} cm · 6 houses · 4 street lights · DMX`;
+  const rows = HOUSES.map(h => `<tr><td>${h.ch}</td><td><span class="sw" style="background:#8a3ffc"></span>${h.label} – LED strip (pos. ${h.idx+1} from left)</td></tr>`).join('')
+    + `<tr><td>7</td><td><span class="sw" style="background:#2fbf4a"></span>4 street lights (parallel, junctions under houses)</td></tr><tr><td>8</td><td>spare</td></tr>`;
+  document.getElementById('chTable').innerHTML = `<tr><th>Ch</th><th>Load</th></tr>` + rows;
+  document.getElementById('lenTable').innerHTML = `<tr><th>Ch</th><th>Cable</th><th>≈ length</th></tr>` +
+    lengths.map(l => `<tr><td>${l.ch}</td><td>${l.name}</td><td>${(Math.ceil(l.len*1.15/10)/10).toFixed(1)} m</td></tr>`).join('');
+  // schematic
+  let s = `<rect width="344" height="250" rx="6" fill="#1b2129"/>`;
+  s += `<rect x="248" y="14" width="86" height="34" rx="4" fill="#333" stroke="#888"/><text x="291" y="35" fill="#fff" font-size="11" text-anchor="middle">DMX control</text>`;
+  s += `<rect x="248" y="78" width="86" height="150" rx="4" fill="#333" stroke="#888"/><text x="291" y="96" fill="#fff" font-size="10.5" text-anchor="middle">8-ch LED driver</text><text x="291" y="110" fill="#bbb" font-size="9" text-anchor="middle">Deca LED</text>`;
+  s += `<path d="M291 48 V78" stroke="#ddd" stroke-width="2"/><text x="296" y="66" fill="#bbb" font-size="9">DMX</text>`;
+  HOUSES.forEach((h, i) => {
+    const y = 124 + i*15;
+    s += `<text x="252" y="${y+3}" fill="#ccc" font-size="9">ch${h.ch}</text><path d="M248 ${y} H120" stroke="#8a3ffc" stroke-width="2"/>`;
+    s += `<rect x="70" y="${y-6}" width="50" height="12" rx="2" fill="#2c3642" stroke="#f0b429"/><text x="95" y="${y+3}" fill="#fff" font-size="9" text-anchor="middle">${h.label}</text>`;
+  });
+  const y7 = 124 + 6*15;
+  s += `<text x="252" y="${y7+3}" fill="#ccc" font-size="9">ch7</text><path d="M248 ${y7} H40 V30" stroke="#2fbf4a" stroke-width="2" fill="none"/>`;
+  for (let k = 0; k < 4; k++) { const y = 34 + k*18; s += `<circle cx="40" cy="${y}" r="3" fill="#bfe8c6"/><path d="M40 ${y} H58" stroke="#2fbf4a" stroke-width="1.5"/><circle cx="62" cy="${y}" r="4" fill="#ffe08a"/><text x="70" y="${y+3}" fill="#ccc" font-size="9">street light ${k+1}</text>`; }
+  s += `<text x="12" y="244" fill="#9aa7b4" font-size="8.5">● junction under a house · purple = LED cable · green = street lights</text>`;
+  document.getElementById('schem').innerHTML = s;
+  document.getElementById('sources').innerHTML =
+    'House sizes: House_1–6.jpeg. House positions/orientation, terrain heights: ADV26_Scenedesign (top view + “siden mot salen”). ' +
+    'Cable routing, planks, junctions, driver/DMX: Ladsby_connection. 4 street lights evenly distributed (30/90/150/210 cm), 13 cm from the front edge; trunk 20 cm from back edge (connection drawing). All boards 600 mm wide. ' +
+    'Landsby 1 top view in the PDF is mirrored vs. its side view – model follows the side view. Landsby 4: position 4 is HUS 3 (top view label HUS 4 corrected).';
+}
+
+// ===========================================================================
+// Steps
+// ===========================================================================
+const STEPS = [
+  { t:'1 · Base plate', cam:'persp', show:['base','dims'],
+    txt:['OSB plate 2400 × 600 mm.', 'Screw 3 small planks (30 mm) across the underside – the plate stands 30 mm above the floor so cables can run underneath.'] },
+  { t:'2 · Isofoam terrain', cam:'sal', show:['base','dims','foam'],
+    txt:['Build up isofoam: {hL} cm at the left end (seen from the audience), {dir} {hR} cm at the right end.', 'Cut a flat pad for each house.'] },
+  { t:'3 · Street lights (in the foam)', cam:'top', xray:true, show:['base','foam','wiringSL','lamps'],
+    txt:['Cut a groove in the foam 20 cm from the back edge – this is the street-light trunk (green).', 'From the trunk, a branch runs in the foam out to each of the 4 street lights.', 'Each junction box sits on a house pad, so it is reachable when that house is lifted off.', 'The trunk leaves the foam at the left end and goes to driver channel 7.'] },
+  { t:'4 · LED cables to the houses', cam:'under', xray:true, asm:0, show:['base','foam','wiringSL','wiringLED','lamps','devices'],
+    txt:['One round cable (purple in the model) per house from the 8-channel Deca LED driver at the left end.', 'The cables run as a round bundle along the front of the board.', 'At each house the cable turns in under the plate (30 mm gap), runs to the back edge and comes up over the back edge of the foam.'] },
+  { t:'5 · Vatt, houses & cable slack', cam:'back', xray:true, asm:0, show:['base','foam','vatt','wiringSL','wiringLED','pigtails','houses','lamps','devices'],
+    txt:['Lay the vatt (cotton snow) over the foam – it hides all cables on top of the foam.', 'Put every house on its pad. The cable goes in just under the back wall.', 'Leave about 20 cm of extra cable inside the house, with the plug on the end.', 'Each roof has the LED strip under the ridge (top) beam, with a short pigtail + socket at one end.'] },
+  { t:'6 · Connect roof LED & put roofs on', cam:'house', xray:true, asm:'anim', show:['base','foam','vatt','wiringSL','wiringLED','pigtails','houses','lamps','devices'],
+    txt:['When all houses are in place: hold the roof just above its house.', 'Using the 20 cm slack, pull the plug up and connect it to the roof pigtail.', 'Lower the roof onto the walls – it just rests there (not fastened); the slack folds back into the house.'] },
+  { t:'7 · Garland, DMX & power on', cam:'persp', lights:true, show:['base','foam','vatt','wiringSL','wiringLED','pigtails','houses','lamps','garland','devices','decor'],
+    txt:['Lay the garland along the front – the cable bundle runs hidden inside it to the driver.', 'Connect DMX control → driver. Ch 1–6 = houses, Ch 7 = street lights, Ch 8 = spare.'] },
+];
+let step = 0, freeMode = false;
+const stepsEl = document.getElementById('steps');
+STEPS.forEach((s, i) => { const b = document.createElement('button'); b.textContent = i+1; b.onclick = () => { setStep(i); closeSheet(); }; stepsEl.appendChild(b); });
+const cb = id => document.getElementById(id);
+const sideEl = document.getElementById('side');
+function closeSheet() { if (window.__isMobile()) { sideEl.classList.remove('open'); sideEl.scrollTop = 0; updHint(); } }
+function updHint() { cb('mHint').textContent = sideEl.classList.contains('open') ? 'tap to close' : 'tap for details'; }
+cb('mTitle').onclick = () => { sideEl.classList.toggle('open'); if (!sideEl.classList.contains('open')) sideEl.scrollTop = 0; updHint(); };
+cb('mPrev').onclick = () => cb('prev').click();
+cb('mNext').onclick = () => cb('next').click();
+function setHint() {
+  cb('hint').textContent = window.__isMobile() ? '1 finger: rotate · 2 fingers: zoom / pan'
+                                               : 'Left-drag: rotate · Right-drag: pan · Wheel: zoom';
+}
+setHint(); addEventListener('resize', setHint);
+const TOGGLES = { cbVatt:'vatt', cbGarland:'garland', cbDecor:'decor' };
+
+function setStep(i) {
+  step = i; freeMode = false;
+  const s = STEPS[i];
+  [...stepsEl.children].forEach((b, k) => b.classList.toggle('on', k === i));
+  cb('stepTitle').textContent = s.t; cb('mStep').textContent = s.t;
+  const sub = t => t.replace('{hL}', village.hLeft).replace('{hR}', village.hRight).replace('{dir}', village.hLeft > village.hRight ? 'falling to' : 'rising to');
+  cb('stepText').innerHTML = s.txt.map(t => `<li>${sub(t)}</li>`).join('');
+  for (const k of GROUPS) G[k].visible = s.show.includes(k);
+  for (const id in TOGGLES) cb(id).checked = G[TOGGLES[id]].visible;
+  cb('cbXray').checked = !!s.xray; setXray(!!s.xray);
+  cb('cbLights').checked = !!s.lights; setLights(!!s.lights);
+  cb('cbExplode').checked = false; extraTarget = 0;
+  if (s.asm === 0) { asm = asmTarget = 0; }
+  else if (s.asm === 'anim') { asm = 0; asmTarget = 1; }
+  else { asm = asmTarget = 1; }
+  goCam(s.cam);
+}
+cb('prev').onclick = () => setStep(Math.max(0, step-1));
+cb('next').onclick = () => setStep(Math.min(STEPS.length-1, step+1));
+cb('btnAll').onclick = () => {
+  freeMode = true; for (const k of GROUPS) G[k].visible = k !== 'dims';
+  for (const id in TOGGLES) cb(id).checked = true;
+  [...stepsEl.children].forEach(b => b.classList.remove('on'));
+  cb('stepTitle').textContent = 'Complete landsby'; cb('mStep').textContent = 'Complete landsby'; closeSheet(); cb('stepText').innerHTML = '<li>Use X-ray to follow the cables, or switch off vatt/garland.</li>';
+};
+cb('cbExplode').onchange = e => { extraTarget = e.target.checked ? 1 : 0; };
+cb('cbXray').onchange = e => setXray(e.target.checked);
+cb('cbLights').onchange = e => setLights(e.target.checked);
+for (const id in TOGGLES) cb(id).onchange = e => { G[TOGGLES[id]].visible = e.target.checked; };
+
+function setXray(on) {
+  for (const k in XRAY) { const m = M[k]; m.transparent = on; m.opacity = on ? m.userData.xrayOpacity : 1; m.depthWrite = !on; m.needsUpdate = true; }
+}
+function setLights(on) {
+  M.pane.emissiveIntensity = on ? 1.6 : 0; M.pane.color.set(on ? 0xffd9a0 : 0x3a4654);
+  M.led.emissiveIntensity = on ? 4 : 0; M.lampGl.emissiveIntensity = on ? 5 : 0;
+  HOUSES.forEach(h => h.light.intensity = on ? 260 : 0);
+  LAMPS.forEach(l => l.light && (l.light.intensity = on ? 40 : 0));
+  scene.background.copy(on ? NIGHT_BG : DAY_BG);
+  hemi.intensity = on ? 0.25 : 1.6; sun.intensity = on ? 0.12 : 2.2; bloom.strength = on ? 0.55 : 0;
+}
+
+const CAMS = {
+  house: { p:[-130, 150, -210], t:[-45, 38, -15] },
+  persp: { p:[-170, 190, 340], t:[0, 15, 0] },
+  sal:   { p:[0, 60, 420],     t:[0, 18, 0] },
+  top:   { p:[0, 430, 1],      t:[0, 0, 0] },
+  back:  { p:[-90, 170, -360], t:[0, 18, 0] },
+  under: { p:[-60, -230, 230], t:[-20, 3, 0] },
+  end:   { p:[-300, 110, 230], t:[-120, 8, 15] },
+};
+let camAnim = null;
+// presets are framed for a ~4:3 view; on narrow (portrait) screens move the camera back so the 240 cm board fits
+function camPose(name) {
+  const c = CAMS[name], t = V(...c.t), p = V(...c.p);
+  const f = clamp(1.3 / camera.aspect, 1, 2.8);
+  return { p: t.clone().add(p.sub(t).multiplyScalar(f)), t };
+}
+function goCam(name) { const c = camPose(name); camAnim = { p0:camera.position.clone(), t0:controls.target.clone(), p1:c.p, t1:c.t, k:0 }; }
+let lastCam = 'persp';
+document.querySelectorAll('[data-cam]').forEach(b => b.onclick = () => { goCam(b.dataset.cam); closeSheet(); });
+
+async function saveBlob(blob, name) {
+  const file = new File([blob], name, { type:blob.type });
+  if (window.__isMobile() && navigator.canShare && navigator.canShare({ files:[file] })) {
+    try { await navigator.share({ files:[file], title:name }); return; } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+cb('btnGlb').onclick = () => {
+  const root = new THREE.Group();
+  for (const k of GROUPS) if (k !== 'dims') root.add(G[k].clone(true));
+  const rm = []; root.traverse(o => { if (o.isCSS2DObject || o.isLight) rm.push(o); }); rm.forEach(o => o.removeFromParent());
+  new GLTFExporter().parse(root, res => {
+    saveBlob(new Blob([res], { type:'model/gltf-binary' }), `${village.name.replace(/\s/g, '_')}.glb`);
+  }, e => alert('Export failed: ' + e), { binary:true });
+};
+cb('btnPng').onclick = () => { renderFrame(); renderer.domElement.toBlob(b => saveBlob(b, `${village.name.replace(/\s/g,'_')}_step${step+1}.png`), 'image/png'); };
+
+const sel = cb('selVillage');
+for (const id in VILLAGES) sel.add(new Option(VILLAGES[id].name, id));
+sel.onchange = () => { buildVillage(sel.value); setStep(step); };
+
+// ===========================================================================
+function resize() { const w = view.clientWidth, h = view.clientHeight; renderer.setSize(w, h); labelRenderer.setSize(w, h); composer.setSize(w, h); camera.aspect = w/h; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); new ResizeObserver(resize).observe(view); resize();
+function visibleChain(o) { for (; o; o = o.parent) if (!o.visible) return false; return true; }
+// assembly state: asm 0 = roofs held above, plug apart; 0..0.4 plug goes up and connects; 0.5..1 roof lowered
+let asm = 1, asmTarget = 1, extra = 0, extraTarget = 0, lastKey = '';
+function animate() {
+  requestAnimationFrame(animate);
+  asm += Math.sign(asmTarget - asm) * Math.min(0.004, Math.abs(asmTarget - asm));
+  extra += Math.sign(extraTarget - extra) * Math.min(0.04, Math.abs(extraTarget - extra));
+  const conn = smooth(asm / 0.4), roofLift = Math.max(1 - smooth((asm - 0.5) / 0.5), smooth(extra));
+  const key = conn.toFixed(4) + '/' + roofLift.toFixed(4);
+  if (key !== lastKey) {
+    HOUSES.forEach(h => { h.group.position.y = h.padY; h.roof.position.y = roofLift * ROOF_DY; });
+    buildLedCables(roofLift, conn); lastKey = key;
+  }
+  if (camAnim) { camAnim.k = Math.min(1, camAnim.k + 0.025); const k = smooth(camAnim.k);
+    camera.position.lerpVectors(camAnim.p0, camAnim.p1, k); controls.target.lerpVectors(camAnim.t0, camAnim.t1, k); if (camAnim.k >= 1) camAnim = null; }
+  controls.update(); renderFrame(); labelRenderer.render(scene, camera);
+  const showL = cb('cbLabels').checked;
+  for (const l of labels) if (!(showL && !freeMode && visibleChain(l) && l.userData.steps.includes(step+1))) l.element.style.display = 'none';
+}
+
+// URL options: ?v=1&step=4&cam=under&xray=1&lights=1&asm=0.3&all=1&instant=1
+{
+  const q = new URLSearchParams(location.search);
+  const vid = q.get('v') && VILLAGES[q.get('v')] ? q.get('v') : '1'; sel.value = vid;
+  { const c = camPose('persp'); camera.position.copy(c.p); controls.target.copy(c.t); }
+  buildVillage(vid);
+  setStep(Math.max(0, Math.min(STEPS.length-1, (parseInt(q.get('step')) || 1) - 1)));
+  if (q.has('cam')) goCam(q.get('cam'));
+  if (q.has('xray')) { cb('cbXray').checked = q.get('xray') === '1'; setXray(cb('cbXray').checked); }
+  if (q.has('lights')) { cb('cbLights').checked = q.get('lights') === '1'; setLights(cb('cbLights').checked); }
+  if (q.has('asm')) { asm = asmTarget = parseFloat(q.get('asm')); }
+  if (q.has('all')) cb('btnAll').click();
+  if (q.get('sheet') === 'open') { sideEl.classList.add('open'); updHint(); }
+  if (q.has('instant')) { if (!q.has('asm')) asm = asmTarget; if (camAnim) camAnim.k = 0.999; }
+}
+animate();
+</script>
+</body>
+</html>
